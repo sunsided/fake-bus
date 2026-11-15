@@ -1,0 +1,21 @@
+[workspace]
+resolver = "3"
+members = ["fake-bus"]
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Markus Mayer <widemeadows@gmail.com>"]
+license = "EUPL-1.2 OR MIT OR Apache-2.0"
+repository = "https://github.com/sunsided/fake-bus"
+edition = "2024"
+rust-version = "1.85"
+
+[workspace.lints.clippy]
+# Modules live in `folder.rs` plus `folder/`, never in `folder/mod.rs`.
+mod_module_files = "deny"
+
+[workspace.dependencies]
+embedded-hal = "1.0.0"
+embedded-hal-async = "1.0.0"
+embedded-hal-bus = "0.3.0"
+embassy-futures = "0.1.2"

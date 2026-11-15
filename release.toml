@@ -1,0 +1,12 @@
+# cargo-release configuration: `cargo release <level>` from the workspace root.
+#
+# cargo-release only bumps, commits, tags (`vX.Y.Z`) and pushes; the tag triggers
+# .github/workflows/release.yml, which publishes to crates.io via trusted publishing
+# and creates the GitHub Release.
+allow-branch = ["main"]
+publish = false
+shared-version = true
+consolidate-commits = true
+pre-release-commit-message = "Release {{version}}"
+tag-name = "v{{version}}"
+tag-message = "Release {{version}}"

@@ -8,6 +8,10 @@ use embedded_hal::i2c::{ErrorKind, ErrorType, NoAcknowledgeSource, Operation, Se
 /// [`FakeI2c`] calls the methods in bus order: [`start`](Self::start) for every start or
 /// repeated start condition, then [`write`](Self::write) or [`read`](Self::read) for every
 /// byte of the transfer, and [`stop`](Self::stop) once at the end of the transaction.
+///
+/// If the model has inherent methods of the same names, such as `address()`, those win in
+/// method-call syntax. Forward to them with a path, `Model::address(self)`, so the impl
+/// doesn't read as recursive.
 pub trait I2cTarget {
     /// Returns the 7-bit address the target responds to.
     ///
@@ -88,28 +92,54 @@ impl<const N: usize> I2cTargets for [&RefCell<dyn I2cTarget + '_>; N] {
 ///
 /// # Shared bus
 ///
-/// ```
-/// # use core::cell::RefCell;
-/// # use embedded_hal::i2c::{ErrorKind, I2c, NoAcknowledgeSource};
-/// # use fake_bus::{FakeI2c, I2cTarget};
-/// # struct Chip(u8);
-/// # impl I2cTarget for Chip {
-/// #     fn address(&self) -> u8 { self.0 }
-/// #     fn start(&mut self, _: bool) -> bool { true }
-/// #     fn write(&mut self, _: u8) -> bool { true }
-/// #     fn read(&mut self) -> u8 { self.0 }
-/// # }
-/// let touch = RefCell::new(Chip(0x15));
-/// let compass = RefCell::new(Chip(0x1E));
+/// Models of different types share one bus as `&RefCell<dyn I2cTarget>`:
 ///
-/// let targets: [&RefCell<dyn I2cTarget>; 2] = [&touch, &compass];
+/// ```
+/// use core::cell::RefCell;
+/// use embedded_hal::i2c::{ErrorKind, I2c, NoAcknowledgeSource};
+/// use fake_bus::{FakeI2c, I2cTarget};
+///
+/// /// A touch controller that reports the number of touch points.
+/// struct Touch {
+///     points: u8,
+/// }
+///
+/// impl I2cTarget for Touch {
+///     fn address(&self) -> u8 { 0x15 }
+///     fn start(&mut self, _is_read: bool) -> bool { true }
+///     fn write(&mut self, _byte: u8) -> bool { true }
+///     fn read(&mut self) -> u8 { self.points }
+/// }
+///
+/// /// A sensor that ignores writes while asleep.
+/// struct Sensor {
+///     awake: bool,
+/// }
+///
+/// impl I2cTarget for Sensor {
+///     fn address(&self) -> u8 { 0x1E }
+///     fn start(&mut self, _is_read: bool) -> bool { true }
+///     fn write(&mut self, _byte: u8) -> bool { self.awake }
+///     fn read(&mut self) -> u8 { 0x40 }
+/// }
+///
+/// let touch = RefCell::new(Touch { points: 2 });
+/// let sensor = RefCell::new(Sensor { awake: false });
+///
+/// let targets: [&RefCell<dyn I2cTarget>; 2] = [&touch, &sensor];
 /// let mut bus = FakeI2c::new(targets);
 ///
-/// assert_eq!(bus.read(0x1E, &mut [0]), Ok(()));
-/// assert_eq!(
-///     bus.read(0x6A, &mut [0]),
-///     Err(ErrorKind::NoAcknowledge(NoAcknowledgeSource::Address))
-/// );
+/// let mut points = [0];
+/// bus.read(0x15, &mut points).unwrap();
+/// assert_eq!(points, [2]);
+///
+/// let nack_data = Err(ErrorKind::NoAcknowledge(NoAcknowledgeSource::Data));
+/// assert_eq!(bus.write(0x1E, &[0x60]), nack_data);
+/// sensor.borrow_mut().awake = true;
+/// assert_eq!(bus.write(0x1E, &[0x60]), Ok(()));
+///
+/// let nack_address = Err(ErrorKind::NoAcknowledge(NoAcknowledgeSource::Address));
+/// assert_eq!(bus.read(0x6A, &mut [0]), nack_address);
 /// ```
 ///
 /// The bus is `Copy` if `T` is, so each driver can get its own copy. `embedded-hal-bus`

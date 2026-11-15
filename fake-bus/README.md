@@ -22,7 +22,8 @@ You write a behavioral model of the chip; the fakes put it on a bus:
 - `FakeSpi`: blocking and async `SpiDevice` on an `SpiTarget`, one chip-select cycle per
   transaction.
 - `FakeDelay`: blocking and async `DelayNs` that advances a `Clock` (in nanoseconds)
-  instead of waiting.
+  instead of waiting. `Micros` and `Millis` convert to a model's coarser ticks and carry
+  the remainder over.
 - `no_std`, no `unsafe`, no heap. Models sit in a `RefCell`, so tests can inspect and
   change them while a driver owns the bus.
 

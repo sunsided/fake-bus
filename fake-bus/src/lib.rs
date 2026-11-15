@@ -79,8 +79,13 @@
 //!
 //! ## Shared buses
 //!
-//! Several targets on one I²C bus are an array (or slice) of
-//! `&RefCell<dyn I2cTarget>`; see [`FakeI2c`]. No heap allocation is needed.
+//! Several targets on one I²C bus, of the same or different model types, are an array (or
+//! slice) of `&RefCell<dyn I2cTarget>`; see [`FakeI2c`]. No heap allocation is needed.
+//!
+//! ## Coarse clocks
+//!
+//! [`Clock`] counts nanoseconds. [`Micros`] and [`Millis`] convert them into the whole
+//! microseconds or milliseconds a model ticks in, carrying the remainder over.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -94,6 +99,13 @@ mod spi;
 #[cfg(test)]
 mod test_model;
 
-pub use delay::{Clock, FakeDelay};
+/// The `embedded-hal` version the fakes implement, so models and their tests can import the
+/// traits without depending on it themselves.
+pub use embedded_hal;
+
+/// The `embedded-hal-async` version the fakes implement.
+pub use embedded_hal_async;
+
+pub use delay::{Clock, FakeDelay, Micros, Millis, Ticks};
 pub use i2c::{FakeI2c, I2cTarget, I2cTargets};
 pub use spi::{FakeSpi, SpiTarget};

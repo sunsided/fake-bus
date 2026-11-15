@@ -10,8 +10,80 @@ pub trait Clock {
     /// Nanoseconds are the finest unit of [`DelayNs`](embedded_hal::delay::DelayNs), so no
     /// delay is rounded before it reaches the model. A `u64` holds about 584 years. A model
     /// with a coarser time step should carry the remainder over to the next call, or short
-    /// delays add up to nothing.
+    /// delays add up to nothing; [`Ticks`] does that.
     fn advance_ns(&mut self, ns: u64);
+}
+
+/// Converts nanoseconds into whole ticks of `UNIT_NS` nanoseconds, carrying the remainder
+/// over to the next call.
+///
+/// For models with a coarser time step than [`Clock`]:
+///
+/// ```
+/// use fake_bus::{Clock, Micros};
+///
+/// struct Model {
+///     elapsed_us: u32,
+///     ticks: Micros,
+/// }
+///
+/// impl Model {
+///     fn tick(&mut self, us: u32) {
+///         self.elapsed_us += us;
+///     }
+/// }
+///
+/// impl Clock for Model {
+///     fn advance_ns(&mut self, ns: u64) {
+///         for us in self.ticks.advance_u32(ns) {
+///             self.tick(us);
+///         }
+///     }
+/// }
+///
+/// let mut model = Model { elapsed_us: 0, ticks: Micros::new() };
+/// for _ in 0..3 {
+///     model.advance_ns(400);
+/// }
+///
+/// assert_eq!(model.elapsed_us, 1); // 1200 ns: one whole µs, 200 ns carried over
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Ticks<const UNIT_NS: u64> {
+    pending_ns: u64,
+}
+
+/// Whole microseconds; see [`Ticks`].
+pub type Micros = Ticks<1_000>;
+
+/// Whole milliseconds; see [`Ticks`].
+pub type Millis = Ticks<1_000_000>;
+
+impl<const UNIT_NS: u64> Ticks<UNIT_NS> {
+    /// Creates a converter with no time carried over.
+    pub const fn new() -> Self {
+        Self { pending_ns: 0 }
+    }
+
+    /// Adds `ns` nanoseconds and returns the number of whole ticks that elapsed.
+    pub fn advance(&mut self, ns: u64) -> u64 {
+        // Saturates instead of overflowing; u64 nanoseconds cover about 584 years.
+        let total = self.pending_ns.saturating_add(ns);
+        self.pending_ns = total % UNIT_NS;
+        total / UNIT_NS
+    }
+
+    /// Like [`advance`](Self::advance), but returns the whole ticks as chunks of at most
+    /// `u32::MAX`, for models whose tick function takes a `u32`. Yields nothing if no whole
+    /// tick elapsed.
+    pub fn advance_u32(&mut self, ns: u64) -> impl Iterator<Item = u32> + use<UNIT_NS> {
+        let mut remaining = self.advance(ns);
+        core::iter::from_fn(move || {
+            let chunk = u32::try_from(remaining).unwrap_or(u32::MAX);
+            remaining -= u64::from(chunk);
+            (chunk > 0).then_some(chunk)
+        })
+    }
 }
 
 /// A delay provider that advances the time of a [`Clock`] instead of waiting.
@@ -98,6 +170,23 @@ mod tests {
             5 + 5_000 + u64::from(u32::MAX) * 1_000_000
         );
         assert_eq!(model.borrow().clock_calls, 3);
+    }
+
+    #[test]
+    fn ticks_carry_the_remainder() {
+        let mut ticks = Micros::new();
+        assert_eq!(ticks.advance(999), 0);
+        assert_eq!(ticks.advance(1), 1);
+        assert_eq!(ticks.advance(2_500), 2);
+        assert_eq!(ticks.advance(500), 1);
+    }
+
+    #[test]
+    fn ticks_split_into_u32_chunks() {
+        let mut ticks = Ticks::<1>::new();
+        let total = 2 * u64::from(u32::MAX) + 5;
+        assert!(ticks.advance_u32(total).eq([u32::MAX, u32::MAX, 5]));
+        assert_eq!(ticks.advance_u32(0).next(), None);
     }
 
     #[test]
